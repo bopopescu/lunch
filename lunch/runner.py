@@ -20,7 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Lunch.  If not, see <http://www.gnu.org/licenses/>.
 """
-Main entry point of the lunch master application.
+Main entry point of the lunch main application.
 """
 import os
 import sys
@@ -28,7 +28,7 @@ import traceback
 from optparse import OptionParser
 import lunch
 
-DESCRIPTION = "Lunch is a distributed process launcher for GNU/Linux. The Lunch master launches lunch-slave processes through an encrypted SSH session if on a remote host. Those slave processes can in turn launch the desired commands on-demand."
+DESCRIPTION = "Lunch is a distributed process launcher for GNU/Linux. The Lunch main launches lunch-subordinate processes through an encrypted SSH session if on a remote host. Those subordinate processes can in turn launch the desired commands on-demand."
 
 def run():
     """
@@ -40,15 +40,15 @@ def run():
     parser.add_option("-f", "--config-file", type="string",
             help="Specifies the python config file. You can also simply specify the config file as the first argument.")
     parser.add_option("-l", "--logging-directory", type="string",
-            help="Specifies the logging directory for the master. Default is %s/$USER/" % (
+            help="Specifies the logging directory for the main. Default is %s/$USER/" % (
                     lunch.DEFAULT_LOG_DIR))
-            # change error message in master.run_master() if you change this
+            # change error message in main.run_main() if you change this
     parser.add_option("-p", "--pid-directory", type="string",
-            help="Specifies the pidfile directory for the master. Default is %s/$USER/" % (
+            help="Specifies the pidfile directory for the main. Default is %s/$USER/" % (
                     lunch.DEFAULT_PID_DIR))
-            # change error message in master.run_master() if you change this
+            # change error message in main.run_main() if you change this
     parser.add_option("-q", "--log-to-file", action="store_true",
-            help="Enables logging master infos to file and disables logging to standard output.")
+            help="Enables logging main infos to file and disables logging to standard output.")
     parser.add_option("-g", "--graphical", action="store_true",
             help="Enables the graphical user interface.")
     parser.add_option("-v", "--verbose", action="store_true",
@@ -56,7 +56,7 @@ def run():
     parser.add_option("-d", "--debug", action="store_true",
             help="Makes the logging output very verbose.")
     parser.add_option("-k", "--kill", action="store_true",
-            help="Kills another lunch master that uses the same config file and logging directory. Exits once it's done.")
+            help="Kills another lunch main that uses the same config file and logging directory. Exits once it's done.")
     (options, args) = parser.parse_args()
     # --------- set configuration file
     if options.config_file:
@@ -84,25 +84,25 @@ def run():
             print("Could not load the GTK+ graphical user interface. " + str(e))
             GUI_ENABLED = False
     else:
-        # print("Using lunch master without the GUI.")
+        # print("Using lunch main without the GUI.")
         GUI_ENABLED = False
 
     from twisted.internet import reactor
     from twisted.internet import defer
     # --------- load the module and run
-    from lunch import master
+    from lunch import main
 
     if options.logging_directory:
         logging_dir = options.logging_directory
     else:
-        logging_dir = master.get_default_log_dir_full_path()
+        logging_dir = main.get_default_log_dir_full_path()
     if options.pid_directory:
         pid_dir = options.pid_directory
     else:
-        pid_dir = master.get_default_pid_dir_full_path()
+        pid_dir = main.get_default_pid_dir_full_path()
     if pid_dir is None:
-        pid_dir = master.get_default_pid_dir_full_path() # FIXME:code duplication
-    if not master.create_dir_and_make_writable(pid_dir):
+        pid_dir = main.get_default_pid_dir_full_path() # FIXME:code duplication
+    if not main.create_dir_and_make_writable(pid_dir):
         print("PID directory is not writable: %s. Use the --pid-directory option" % (pid_dir))
         sys.exit(1)
     error_message = None
@@ -120,22 +120,22 @@ def run():
                 if reactor.running:
                     reactor.stop()
             #FIXME: should be able to log to file too
-            master.start_stdout_logging(log_level=log_level)
-            identifier = master.gen_id_from_config_file_name(config_file)
-            master.log.info("Will check if lunch master %s is running and kill it if so." % (
+            main.start_stdout_logging(log_level=log_level)
+            identifier = main.gen_id_from_config_file_name(config_file)
+            main.log.info("Will check if lunch main %s is running and kill it if so." % (
                     identifier))
-            deferred = master.kill_master_if_running(identifier=identifier,
+            deferred = main.kill_main_if_running(identifier=identifier,
                     directory=pid_dir)
             deferred.addCallback(_killed_cb)
             reactor.run()
             sys.exit(0)
         try:
             #print("DEBUG: using config_file %s" % (config_file))
-            lunch_master = master.run_master(config_file,
+            lunch_main = main.run_main(config_file,
                     log_to_file=file_logging_enabled, pid_dir=pid_dir,
                     log_dir=logging_dir, log_level=log_level)
-        except master.FileNotFoundError, e:
-            #print("Error starting lunch as master.")
+        except main.FileNotFoundError, e:
+            #print("Error starting lunch as main.")
             msg = "A configuration file is missing. Try the --help flag. "
             msg += str(e)
             error_message = msg
@@ -164,11 +164,11 @@ def run():
 
     if GUI_ENABLED:
         from lunch import gui
-        app = gui.start_gui(lunch_master)
+        app = gui.start_gui(lunch_main)
         #print("Done starting the app.")
     try:
         reactor.run()
     except KeyboardInterrupt:
-        #log.msg("Ctrl-C in Master.", logging.INFO)
-        #lunch_master.quit_master()
+        #log.msg("Ctrl-C in Main.", logging.INFO)
+        #lunch_main.quit_main()
         reactor.stop()

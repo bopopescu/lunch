@@ -21,7 +21,7 @@
 # along with Lunch.  If not, see <http://www.gnu.org/licenses/>.
 
 """
-The Lunch master manages lunch slaves.
+The Lunch main manages lunch subordinates.
 @author: Alexandre Quessy <alexandre@quessy.net>
 """
 
@@ -47,7 +47,7 @@ import time
 
 
 log = None # global singleton
-LOG_NAME = 'master'
+LOG_NAME = 'main'
 
 
 def start_stdout_logging(log_level='info'):
@@ -91,9 +91,9 @@ def get_default_pid_dir_full_path():
     return os.path.join(DEFAULT_PID_DIR, _guess_user_name())
 
 
-class Master(object):
+class Main(object):
     """
-    The Lunch Master launches slaves, which in turn launch childs.
+    The Lunch Main launches subordinates, which in turn launch childs.
     """
     def __init__(self, log_dir=None, pid_dir=None, pid_file=None,
             log_file=None, config_file=None, verbose=False):
@@ -134,7 +134,7 @@ class Master(object):
         self.launch_next_time = time.time() # time in future
         self._looping_call = task.LoopingCall(self.main_loop)
         self._looping_call.start(self.main_loop_every, False) 
-        self.wants_to_live = False # The master is either trying to make every
+        self.wants_to_live = False # The main is either trying to make every
                                    # child live or die. 
         self.command_added_signal = sig.Signal() # param: Command object
         self.command_removed_signal = sig.Signal() # param: command object
@@ -149,7 +149,7 @@ class Master(object):
 
     def _guess_local_ip_and_hostname_for_local_host(self):
         """
-        Lunch master guesses the hostname of the local machine,
+        Lunch main guesses the hostname of the local machine,
         and should at least guess one IP (for one interface) 
 
         It adds it to the list local_addresses so that it doesn't use SSH to
@@ -167,7 +167,7 @@ class Master(object):
 
     def start_all(self):
         """
-        Sets the master so that it starts all the slaves.
+        Sets the main so that it starts all the subordinates.
         """
         log.debug("Using %s" % (__file__))
         for c in self.commands.values():
@@ -216,7 +216,7 @@ class Master(object):
         in the order they were given, sleeping some time before each,
         as configured using their sleep_after attribute. 
         
-        The master is set up to either keep every child alive,
+        The main is set up to either keep every child alive,
         or keep them dead. Stopping them is done as soon as possible.
         Starting them is done using the sequence described above. 
 
@@ -230,7 +230,7 @@ class Master(object):
         # Trying to make all child live. (False if in the process of quitting)
         #orphans = self.tree.get_supported_by(self.tree.ROOT)
         #self._manage_siblings(orphans, should_run=self.wants_to_live)
-        #log.info("----- Managing slaves LOOP ----")
+        #log.info("----- Managing subordinates LOOP ----")
 
         self._time_now = time.time()
         iterator = graph.iter_from_root_to_leaves(self.tree)
@@ -368,7 +368,7 @@ class Master(object):
         self.tree.remove_node(node) # XXX ?
         log.info("Removed command %s from the graph" % (node))
         self.command_removed_signal(ref)
-        ref.quit_slave()
+        ref.quit_subordinate()
 
     def _get_all(self):
         """
@@ -446,16 +446,16 @@ class Master(object):
         else:
             reactor.callLater(0.1, self._start_if_all_stopped)
 
-    def quit_master(self):
+    def quit_main(self):
         """
-        Stops all slaves and quits the application.
+        Stops all subordinates and quits the application.
         """
         if reactor.running:
             reactor.stop()
 
     def before_shutdown(self):
         """
-        Called before Twisted's shutdown. (end of master process)
+        Called before Twisted's shutdown. (end of main process)
         """
         MAXIMUM_TIME_TO_WAIT = 20.0
         if self.pid_file is not None:
@@ -463,7 +463,7 @@ class Master(object):
             try:
                 os.remove(self.pid_file)
             except OSError, e:
-                log.error("Error removing lunch master PID file: " + str(e))
+                log.error("Error removing lunch main PID file: " + str(e))
             else:
                 log.info("Erased %s" % (self.pid_file))
         now = time.time()
@@ -476,12 +476,12 @@ class Master(object):
             again = False
             for c in self._get_all():
                 if c.child_state == STATE_RUNNING:
-                    log.info("Please wait... Slave %s is still running." % (
+                    log.info("Please wait... Subordinate %s is still running." % (
                             c.identifier))
                     again = True
                     c.enabled = False
-                    if c.slave_state == STATE_RUNNING:
-                        # c.quit_slave()
+                    if c.subordinate_state == STATE_RUNNING:
+                        # c.quit_subordinate()
                         c.send_stop()
             if not again:
                 log.info("All child processes are successfully stopped.")
@@ -496,7 +496,7 @@ class Master(object):
             if again:
                 reactor.callLater(0.1, _later, self, data)
             else:
-                log.info("Done stopping the Lunch Master.")
+                log.info("Done stopping the Lunch Main.")
                 deferred.callback(True) # stops reactor
         
         _later(self, _shutdown_data)
@@ -507,14 +507,14 @@ class Master(object):
         Cleans up the reactor stuff.
         @rtype: L{twisted.defer.DeferredList}
         """
-        log.info("_cleanup the Master")
+        log.info("_cleanup the Main")
         deferreds = []
         reactor.removeSystemEventTrigger(self._shutdown_event_id)
-        # quit all slaves
+        # quit all subordinates
         for command in self.get_all_commands():
-            if command.slave_state == STATE_RUNNING:
-                deferreds.append(command.quit_slave())
-        # stop the master's loop
+            if command.subordinate_state == STATE_RUNNING:
+                deferreds.append(command.quit_subordinate())
+        # stop the main's loop
         if self._looping_call.running:
             d = self._looping_call.deferred
             self._looping_call.stop() # FIXME
@@ -538,8 +538,8 @@ def _validate_identifier(identifier):
 
 def gen_id_from_config_file_name(config_file_name="lunchrc"):
     """
-    Returns an identifier for the master using the config file name.
-    Useful so that there is not two masters running with the same config file.
+    Returns an identifier for the main using the config file name.
+    Useful so that there is not two mains running with the same config file.
     @rettype str
     """
     file_name = os.path.split(config_file_name)[1] # remove dir name
@@ -552,9 +552,9 @@ def gen_pid_file_path(identifier="lunchrc", directory=None):
     Returns a PID file name. 
 
     Creates the directory if it does not exist.
-    @return: Full path of the PID file for that master.
+    @return: Full path of the PID file for that main.
     """
-    file_name = "lunch-pid-master-%s.pid" % (identifier)
+    file_name = "lunch-pid-main-%s.pid" % (identifier)
     if not os.path.exists(directory):
         os.makedirs(directory, 0777) # XXX world-writable directories
     if not os.path.isdir(directory):
@@ -563,13 +563,13 @@ def gen_pid_file_path(identifier="lunchrc", directory=None):
     return pid_file
 
 
-def is_lunch_master_running(pid_file):
+def is_lunch_main_running(pid_file):
     """
-    Checks if a master is running, given its PID file.
+    Checks if a main is running, given its PID file.
     Removes the PID file if it's not running.
     
-    @param pid_file: Full path of a PID file for a master.
-    @return: PID of the master if running. None if not. 
+    @param pid_file: Full path of a PID file for a main.
+    @return: PID of the main if running. None if not. 
     """
     if os.path.exists(pid_file):
         f = open(pid_file, 'r')
@@ -584,17 +584,17 @@ def is_lunch_master_running(pid_file):
             os.remove(pid_file)
             return None
         else:
-            # checks if it's really a lunch master that has this ID.
-            command_check_master = "ps aux | grep %d | grep -v grep" % (int(pid))
-            #d = run_and_wait("bash", ["-c", command_check_master])
+            # checks if it's really a lunch main that has this ID.
+            command_check_main = "ps aux | grep %d | grep -v grep" % (int(pid))
+            #d = run_and_wait("bash", ["-c", command_check_main])
             # blocking... it's easier to debug for now
             # TODO: get rid of subprocess here.
-            output = subprocess.Popen(command_check_master,
+            output = subprocess.Popen(command_check_main,
                     stdout=subprocess.PIPE, shell=True).communicate()[0]
             if "python" in output:
                 # used to be "lunch",
                 # but changed it to "python",
-                # since lunch.master is now a library as well.
+                # since lunch.main is now a library as well.
                 return int(pid)
             else:
                 #print "found PID, but it's not lunch!"
@@ -604,20 +604,20 @@ def is_lunch_master_running(pid_file):
         return None
 
 
-def write_master_pid_file(identifier="lunchrc", directory=None):
+def write_main_pid_file(identifier="lunchrc", directory=None):
     """
-    Writes master's PID in a file.
+    Writes main's PID in a file.
     
-    Raises an error if a master with that PID already exists.
+    Raises an error if a main with that PID already exists.
     @return: pid file name.
     """
-    # Check if there is already a master running
+    # Check if there is already a main running
     pid_file = gen_pid_file_path(identifier, directory)
     if os.path.exists(pid_file):
-        log.warning("PID file for master %s found!" % (pid_file))
-        pid = is_lunch_master_running(pid_file)
+        log.warning("PID file for main %s found!" % (pid_file))
+        pid = is_lunch_main_running(pid_file)
         if pid is not None:
-            raise RuntimeError("There is already a Lunch Master running using the same configuration file. Its PID is %s" % (pid))
+            raise RuntimeError("There is already a Lunch Main running using the same configuration file. Its PID is %s" % (pid))
         else:
             pass
     # Write our PID file
@@ -626,13 +626,13 @@ def write_master_pid_file(identifier="lunchrc", directory=None):
     f.write(str(pid))
     f.close()
     os.chmod(pid_file, 0600)
-    log.info("Wrote master's PID %d to file %s." % (pid, pid_file))
+    log.info("Wrote main's PID %d to file %s." % (pid, pid_file))
     return pid_file
 
 
-def kill_master_if_running(identifier="lunchrc", directory=None):
+def kill_main_if_running(identifier="lunchrc", directory=None):
     """
-    Given a lunch master identifier and a PID file directory, kills the master.
+    Given a lunch main identifier and a PID file directory, kills the main.
     """
     pid_file = gen_pid_file_path(identifier, directory)
     deferred = defer.Deferred()
@@ -642,28 +642,28 @@ def kill_master_if_running(identifier="lunchrc", directory=None):
     def _kill(is_first_time_called=False):
         #we check if running several time before to send it SIGKILL
         if os.path.exists(pid_file):
-            log.info("PID file for master %s found!" % (pid_file))
-            pid = is_lunch_master_running(pid_file)
+            log.info("PID file for main %s found!" % (pid_file))
+            pid = is_lunch_main_running(pid_file)
             if pid is not None:
                 if is_first_time_called:
-                    log.warning("Sending SIGINT to the lunch master %s." % (identifier))
+                    log.warning("Sending SIGINT to the lunch main %s." % (identifier))
                     os.kill(pid, signal.SIGINT)
                     reactor.callLater(0.2, _kill)
                 else:
                     if time.time() > send_sigkill_at:
-                        log.warning("Sending SIGKILL to the lunch master %s." % (identifier))
+                        log.warning("Sending SIGKILL to the lunch main %s." % (identifier))
                         os.kill(signal.SIGKILL)
                         deferred.callback(None)
                     else:
-                        log.debug("The lunch master %s is not dead yet." % (identifier))
+                        log.debug("The lunch main %s is not dead yet." % (identifier))
                         reactor.callLater(0.2, _kill)
             else:
                 if is_first_time_called:
-                    log.warning("The lunch master %s was not running." % (identifier))
+                    log.warning("The lunch main %s was not running." % (identifier))
                 deferred.callback(None)
         else:
             if is_first_time_called:
-                log.info("Could not find a PID file for master %s." % (identifier))
+                log.info("Could not find a PID file for main %s." % (identifier))
             deferred.callback(None)
     
     reactor.callLater(0.01, _kill, True)
@@ -672,11 +672,11 @@ def kill_master_if_running(identifier="lunchrc", directory=None):
 
 def start_file_logging(identifier="lunchrc", directory=None, log_level='info'):
     """
-    Starts logging the Master infos to a file.
+    Starts logging the Main infos to a file.
     @rettype: str
     """
     global log
-    file_name = "master-%s.log" % (identifier)
+    file_name = "main-%s.log" % (identifier)
     if not os.path.exists(directory):
         os.makedirs(directory, 0777) # world-writable directories
     full_path = os.path.join(directory, file_name)
@@ -706,7 +706,7 @@ def chmod_file_not_world_writable(config_file):
         log.warning("WARNING: Could not chmod configuration file. %s" % (e))
 
 
-def execute_config_file(lunch_master, config_file, chmod_config_file=True):
+def execute_config_file(lunch_main, config_file, chmod_config_file=True):
     """
     Reads the lunch file and execute it as Python code.
     Also makes it non-writable by everyone else, just in case.
@@ -718,8 +718,8 @@ def execute_config_file(lunch_master, config_file, chmod_config_file=True):
      * add_command
      * add_local_address
     
-    The user can also access the lunch_master variable, which is
-    the Lunch Master.
+    The user can also access the lunch_main variable, which is
+    the Lunch Main.
     """
     from lunch import commands
     def add_local_address(address):
@@ -733,9 +733,9 @@ def execute_config_file(lunch_master, config_file, chmod_config_file=True):
         else:
             addresses = address
         for address in addresses:
-            if address not in lunch_master.local_addresses:
+            if address not in lunch_main.local_addresses:
                 log.info("Adding %s in list of local addresses." % (address))
-                lunch_master.local_addresses.append(address)
+                lunch_main.local_addresses.append(address)
     # --------------------------------
     def add_command(command=None, identifier=None, env=None, user=None,
             host=None, group=None, order=None, sleep_after=0.25, respawn=True,
@@ -745,7 +745,7 @@ def execute_config_file(lunch_master, config_file, chmod_config_file=True):
         This is the only function that users use from within the configuration
         file. It adds a Command instance to the list of commands to run. 
 
-        This function calls the Master.add_command static method, passing to it
+        This function calls the Main.add_command static method, passing to it
         a L{lunch.commands.Command} object
         """
         # TODO: remove priority and sleep kwargs in a future version
@@ -761,16 +761,16 @@ def execute_config_file(lunch_master, config_file, chmod_config_file=True):
         #if priority is not None:
         #    warnings.warn("The priority keyword argument does not exist anymore. Only the order in which add_command calls are done is considered.", DeprecationWarning)
         if log_dir is None:
-            log_dir = lunch_master.log_dir
+            log_dir = lunch_main.log_dir
         #TODO: if pid_dir is None:
-        #         pid_dir = lunch_master.pid_dir
+        #         pid_dir = lunch_main.pid_dir
         c = commands.Command(command=command, env=env, host=host, user=user,
                 order=order, sleep_after=sleep_after, respawn=respawn,
                 minimum_lifetime_to_respawn=minimum_lifetime_to_respawn,
                 log_dir=log_dir, identifier=identifier, depends=depends,
                 try_again_delay=try_again_delay, give_up_after=give_up_after,
                 ssh_port=ssh_port)
-        lunch_master.add_command(c)
+        lunch_main.add_command(c)
     # -------------------------------------
     #global _commands # is this necessary?
     if os.path.exists(config_file):
@@ -819,22 +819,22 @@ def create_dir_and_make_writable(directory):
         return False
 
 
-def run_master(config_file, log_to_file=False, pid_dir=None, log_dir=None,
+def run_main(config_file, log_to_file=False, pid_dir=None, log_dir=None,
         chmod_config_file=True, verbose=False, log_level="info"):
     """
-    Runs the master that calls commands using ssh or so.
+    Runs the main that calls commands using ssh or so.
 
-    This happens only on the master computer.
+    This happens only on the main computer.
      * reads config file
      * uses multiprocessing to create many workers. (calling start_worker)
        Those worker launch the "lunch" program in a xterm terminal.
        (maybe through ssh, if on a remote host)
      * If ctrl-C is pressed from any worker, dies.
-    @rettype Master
+    @rettype Main
     
     Might raise a RuntimeError or a FileNotFoundError
     """
-    master_identifier = gen_id_from_config_file_name(config_file)
+    main_identifier = gen_id_from_config_file_name(config_file)
     # TODO: make this non-blocking. (return a Deferred)
 
     # log dir:
@@ -848,13 +848,13 @@ def run_master(config_file, log_to_file=False, pid_dir=None, log_dir=None,
     if not create_dir_and_make_writable(pid_dir):
         raise RuntimeError("PID directory is not writable: %s. Use the --pid-directory option" % (pid_dir))
 
-    log_file = start_logging(identifier=master_identifier,
+    log_file = start_logging(identifier=main_identifier,
             log_to_file=log_to_file, log_dir=log_dir, log_level=log_level)
-    pid_file = write_master_pid_file(identifier=master_identifier, directory=pid_dir)
-    log.debug("-------------------- Starting master -------------------")
-    log.info("Using lunch master module %s" % (__file__))
-    lunch_master = Master(log_dir=log_dir, pid_file=pid_file,
+    pid_file = write_main_pid_file(identifier=main_identifier, directory=pid_dir)
+    log.debug("-------------------- Starting main -------------------")
+    log.info("Using lunch main module %s" % (__file__))
+    lunch_main = Main(log_dir=log_dir, pid_file=pid_file,
             log_file=log_file, config_file=config_file, verbose=verbose)
-    execute_config_file(lunch_master, config_file, chmod_config_file=chmod_config_file)
+    execute_config_file(lunch_main, config_file, chmod_config_file=chmod_config_file)
     # TODO: return a Deferred
-    return lunch_master
+    return lunch_main
